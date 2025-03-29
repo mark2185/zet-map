@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
 
 	"github.com/MobilityData/gtfs-realtime-bindings/golang/gtfs"
 	"google.golang.org/protobuf/proto"
@@ -44,10 +43,6 @@ func fetchGTFSRealTime(url string) (*gtfs.FeedMessage, error) {
 	return feed, nil
 }
 
-type Filter struct {
-	routeId string
-}
-
 func getAllVehicles(feed *gtfs.FeedMessage) []Vehicle {
 	var vehicles []Vehicle
 	for _, entity := range feed.Entity {
@@ -61,49 +56,6 @@ func getAllVehicles(feed *gtfs.FeedMessage) []Vehicle {
 	}
 
 	return vehicles
-}
-
-func readGTFSRealtime(feed *gtfs.FeedMessage) {
-	for _, entity := range feed.Entity {
-		if entity.TripUpdate != nil {
-			// fmt.Println("Trip Update: ", entity.TripUpdate)
-		}
-		if entity.Vehicle != nil {
-			vehicle := entity.GetVehicle()
-			routeId := vehicle.GetTrip().GetRouteId()
-			if routeId == "5" {
-				fmt.Println("Vehicle Position: ", vehicle)
-			}
-		}
-		if entity.Alert != nil {
-			// fmt.Println("Service Alert: ", entity.Alert)
-		}
-	}
-}
-
-const osmStaticMapURL = "https://static-maps.yandex.ru/1.x/?l=map&size=600,400&z=13"
-
-func generateMap(lat, lon float64) {
-	url := fmt.Sprintf("%s&pt=%f,%f,pm2rdl", osmStaticMapURL, lon, lat)
-
-	resp, err := http.Get(url)
-	if err != nil {
-		log.Fatalf("Error fetching map: %v", err)
-	}
-	defer resp.Body.Close()
-
-	file, err := os.Create("/tmp/map.png")
-	if err != nil {
-		log.Fatalf("Error creating file: %v", err)
-	}
-	defer file.Close()
-
-	_, err = file.ReadFrom(resp.Body)
-	if err != nil {
-		log.Fatalf("Error saving map image: %v", err)
-	}
-
-	fmt.Println("Map saved as /tmp/map.png")
 }
 
 func vehicleHandler(w http.ResponseWriter, r *http.Request) {
@@ -124,27 +76,13 @@ func mapHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	// feed, err := fetchGTFSRealTime(gtfsURL)
-	// if err != nil {
-	// log.Fatalf("Error fetching data: %v", err)
-	// }
-
-	// vehicles := getAllVehicles(feed)
-
-	// log.Println(vehicles)
-
 	http.HandleFunc("/", mapHandler)
 	http.HandleFunc("/vehicles", vehicleHandler)
 
-	fmt.Println("Server running on http://localhost:8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	fmt.Println("Server running on port 8080")
+	log.Fatal(http.ListenAndServe("0.0.0.0:8080", nil))
 
 	// if feed.Header.Timestamp != nil {
 	// fmt.Printf("Feed last updated: %v\n", *feed.Header.Timestamp)
 	// }
-
-	// vehicles := getAllVehicles(feed)
-	// readGTFSRealtime(feed)
-
-	// generateMap(45.8, 15.9)
 }
