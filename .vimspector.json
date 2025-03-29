@@ -1,0 +1,21 @@
+{
+    "configurations": {
+        "dive": {
+            "adapter": "delve",
+            "filetypes": [ "go" ],
+            "variables": {
+                // example, to disable delve's go version check
+                "dlvFlags": "--check-go-version=false"
+            },
+            "configuration": {
+                "env": {
+                    "CHARM": "1"
+                },
+                "request": "launch",
+                "program": "${workspaceRoot}/main.go",
+                "cwd": "${workspaceRoot}",
+                "mode": "debug"
+            }
+        }
+    }
+}
