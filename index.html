@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GTFS Realtime Map</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <style>
+        #map { height: 100vh; width: 100%; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+
+    <script>
+        var map = L.map('map').setView([45.8020, 15.9819], 13); // Default to San Francisco
+
+        // Add OpenStreetMap tiles
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        var markers = [];
+
+        // Fetch vehicle data and update markers
+        function updateVehicles() {
+            fetch('/vehicles')
+                .then(response => response.json())
+                .then(data => {
+                    // Remove old markers
+                    markers.forEach(marker => map.removeLayer(marker));
+                    markers = [];
+
+                    // Add new markers
+                    data.forEach(vehicle => {
+                        var marker = L.marker([vehicle.lat, vehicle.lon]).addTo(map);
+                        markers.push(marker);
+                    });
+                })
+                .catch(error => console.error("Error fetching vehicle data:", error));
+        }
+
+        // Update vehicles every 10 seconds
+        updateVehicles();
+        setInterval(updateVehicles, 10000);
+    </script>
+</body>
+</html>
