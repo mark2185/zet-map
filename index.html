@@ -8,15 +8,20 @@
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <style>
         #map { height: 90vh; width: 100%; }
-        #controls { padding: 10px; background: white; position: absolute; top: 10px; left: 10px; z-index: 1000; border-radius: 8px; }
+        #controls-container { padding: 10px; background: white; position: absolute; top: 10px; left: 10px; z-index: 1000; border-radius: 8px; }
+        #controls { display: block; } /* Initially show the controls */
+        #filter-button { margin-bottom: 10px; cursor: pointer; }
         label { display: block; margin-bottom: 5px; }
     </style>
 </head>
 <body>
 
-    <div id="controls">
-        <h4>Filter by Route</h4>
-        <div id="routeFilters"></div>
+    <div id="controls-container">
+        <button id="filter-button">Show/Hide Filters</button>
+        <div id="controls">
+            <h4>Filter by Route</h4>
+            <div id="routeFilters"></div>
+        </div>
     </div>
 
     <div id="map"></div>
@@ -136,6 +141,16 @@
                 }
             });
         }
+
+        // Function to toggle the visibility of the controls div
+        document.addEventListener('DOMContentLoaded', function() {
+            const filterButton = document.getElementById('filter-button');
+            const controlsDiv = document.getElementById('controls');
+
+            filterButton.addEventListener('click', function() {
+                controlsDiv.style.display = controlsDiv.style.display === 'none' ? 'block' : 'none';
+            });
+        });
 
         // Fetch and update data every 10 seconds
         updateVehicles();
