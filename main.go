@@ -84,7 +84,7 @@ func getAllVehicles(feed *gtfs.FeedMessage) []Vehicle {
 func vehicleHandler(w http.ResponseWriter, r *http.Request) {
 	feed, err := fetchGTFSRealTime(gtfsURL)
 	if err != nil {
-		log.Fatalf("Error: %v", err)
+		log.Printf("Error: %v", err)
 	}
 
 	vehicles := getAllVehicles(feed)
@@ -101,7 +101,7 @@ func mapHandler(w http.ResponseWriter, r *http.Request) {
 func main() {
 	tripsFile, err := os.Open("./data/trips.txt")
 	if err != nil {
-		log.Fatalf("Could not open trips info: %v\n", err)
+		log.Printf("Could not open trips info: %v\n", err)
 	}
 	defer tripsFile.Close()
 
@@ -109,7 +109,7 @@ func main() {
 
 	_, err = tripsReader.Read() // read the header
 	if err != nil {
-		log.Fatalf("Could not parse CSV: %v\n", err)
+		log.Printf("Could not parse CSV: %v\n", err)
 	}
 
 	rawCSVdata, _ := tripsReader.ReadAll() // read the rest
