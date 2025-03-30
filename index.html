@@ -45,7 +45,7 @@
         }; // Stores colors for each route
 
         // Define a train icon
-        function getTrainIcon(routeID, color) {
+        function getTrainIcon(routeID, color, direction) {
             return L.divIcon({
                 className: "custom-train-icon",
                 html: `
@@ -61,8 +61,8 @@
                             font-size: 20px;
                             font-weight: bold;
                             color: white;
-                            text-shadow: 1px 1px 2px black;
-                        ">${routeID}</span>
+                            text-shadow: 2px 2px 2px black;
+                        ">${routeID}${direction}</span>
                     </div>
                 `,
                 iconSize: [40, 40], // Adjust the icon size
@@ -138,7 +138,7 @@
                 if (selectedRoutes.has(vehicle.route_id)) {
                     let color = getRouteColor(vehicle.route_id);
                     let marker = L.marker([vehicle.lat, vehicle.lon], {
-                        icon: getTrainIcon(vehicle.route_id, color)
+                        icon: getTrainIcon(vehicle.route_id, color, vehicle.direction)
                     })
                     .addTo(map)
                     .bindPopup(`<b>Route:</b> ${vehicle.route_id}`);
