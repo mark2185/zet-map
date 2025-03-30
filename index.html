@@ -153,6 +153,58 @@
             });
         }
 
+        // Function to add the user's location
+        function addUserLocation() {
+            if (!navigator.geolocation) {
+                alert("Geolocation is not supported by your browser");
+                return;
+            }
+
+            let userMarker;
+
+            function success(position) {
+                let lat = position.coords.latitude;
+                let lon = position.coords.longitude;
+
+                // If marker exists, update position
+                if (userMarker) {
+                    userMarker.setLatLng([lat, lon]);
+                } else {
+                    // Create a marker for the user's location
+                    userMarker = L.marker([lat, lon], {
+                        icon: L.divIcon({
+                            className: "custom-user-icon",
+                            html: `
+                                <div style="position: relative; width: 40px; height: 40px;">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="40" height="40">
+                                        <path fill="blue" d="M256 8C119 8 8 119 8 256s111 248 248 248 248-111 248-248S393 8 256 8zm0 448c-110.5 0-200-89.5-200-200S145.5 56 256 56s200 89.5 200 200-89.5 200-200 200zm0-320c-66.3 0-120 53.7-120 120s53.7 120 120 120 120-53.7 120-120-53.7-120-120-120z"/>
+                                    </svg>
+                                </div>
+                            `,
+                            iconSize: [40, 40],
+                            iconAnchor: [20, 20]
+                        })
+                    }).addTo(map).bindPopup("You are here");
+
+                    // Center the map on the user's location
+                    map.setView([lat, lon], 13);
+                }
+            }
+
+            function error() {
+                alert("Unable to retrieve your location");
+            }
+
+            // Get the initial position
+            navigator.geolocation.getCurrentPosition(success, error);
+
+            // Watch for position changes
+            navigator.geolocation.watchPosition(success, error, {
+                enableHighAccuracy: true,
+                maximumAge: 10000
+            });
+        }
+
         // Function to toggle the visibility of the controls div
         document.addEventListener('DOMContentLoaded', function() {
             const filterButton = document.getElementById('filter-button');
@@ -164,6 +216,8 @@
 
             // Initialize filters from URL
             updateRouteFilters();
+
+            addUserLocation();
         });
 
         // Update URL with selected routes
