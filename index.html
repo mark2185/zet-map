@@ -99,11 +99,9 @@
         function updateRouteFilters() {
             let filterDiv = document.getElementById("routeFilters");
 
-            // Store current checked states
-            let checkedRoutes = new Set();
-            document.querySelectorAll("#routeFilters input:checked").forEach(input => {
-                checkedRoutes.add(input.value);
-            });
+            // Store current checked states from URL
+            let urlParams = new URLSearchParams(window.location.search);
+            let checkedRoutesFromURL = new Set(urlParams.getAll("routes"));
 
             // Clear existing checkboxes
             filterDiv.innerHTML = "";
@@ -117,14 +115,17 @@
             sortedRoutes.forEach(routeID => {
                 let color = getRouteColor(routeID);
                 let label = document.createElement("label");
-                let isChecked = checkedRoutes.has(routeID) ? "checked" : ""; // Preserve state
+                let isChecked = checkedRoutesFromURL.has(routeID) ? "checked" : ""; // Preserve state from URL
                 label.innerHTML = `<input type="checkbox" value="${routeID}" ${isChecked}> <span style="color:${color}; font-weight:bold;">Route ${routeID}</span>`;
                 filterDiv.appendChild(label);
             });
 
             // Reattach event listeners
             document.querySelectorAll("#routeFilters input").forEach(input => {
-                input.addEventListener("change", renderMarkers);
+                input.addEventListener("change", function() {
+                    updateURL();
+                    renderMarkers();
+                });
             });
         }
 
@@ -160,7 +161,21 @@
             filterButton.addEventListener('click', function() {
                 controlsDiv.style.display = controlsDiv.style.display === 'none' ? 'block' : 'none';
             });
+
+            // Initialize filters from URL
+            updateRouteFilters();
         });
+
+        // Update URL with selected routes
+        function updateURL() {
+            let selectedRoutes = [];
+            document
+                .querySelectorAll('#routeFilters input:checked')
+                .forEach((input) => {
+                    selectedRoutes.push('routes=' + input.value);
+                });
+            history.replaceState(null, '', '?' + selectedRoutes.join('&'));
+        }
 
         // Fetch and update data every 10 seconds
         updateVehicles();
