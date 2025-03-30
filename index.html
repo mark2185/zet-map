@@ -46,6 +46,10 @@
 
         // Define a train icon
         function getTrainIcon(routeID, color, direction) {
+            var label = routeID + ">";
+            if (direction === "<") {
+                label = "<" + routeID;
+            }
             return L.divIcon({
                 className: "custom-train-icon",
                 html: `
@@ -62,7 +66,7 @@
                             font-weight: bold;
                             color: white;
                             text-shadow: 2px 2px 2px black;
-                        ">${routeID}${direction}</span>
+                        ">${label}</span>
                     </div>
                 `,
                 iconSize: [40, 40], // Adjust the icon size
