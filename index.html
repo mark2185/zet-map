@@ -36,7 +36,13 @@
         var markers = [];
         var allVehicles = [];
         var routeSet = new Set();
-        var routeColors = {}; // Stores colors for each route
+        var routeColors = {
+            '2': '#d652df',
+            '4': '#8f52df',
+            '5': '#df525b',
+            '14': '#a2df52',
+            '17': '#52dfd6',
+        }; // Stores colors for each route
 
         // Define a train icon
         function getTrainIcon(routeID, color) {
@@ -52,7 +58,7 @@
                             top: 50%;
                             left: 50%;
                             transform: translate(-50%, -50%);
-                            font-size: 14px;
+                            font-size: 20px;
                             font-weight: bold;
                             color: white;
                             text-shadow: 1px 1px 2px black;
