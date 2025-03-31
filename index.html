@@ -231,9 +231,9 @@
             history.replaceState(null, '', '?' + selectedRoutes.join('&'));
         }
 
-        // Fetch and update data every 10 seconds
+        // Fetch and update data every 2 seconds
         updateVehicles();
-        setInterval(updateVehicles, 10000);
+        setInterval(updateVehicles, 2000);
     </script>
 </body>
 </html>
