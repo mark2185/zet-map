@@ -98,10 +98,10 @@ func mapHandler(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "index.html")
 }
 
-func main() {
+func loadTripsData() {
 	tripsFile, err := os.Open("./data/trips.txt")
 	if err != nil {
-		log.Printf("Could not open trips info: %v\n", err)
+		log.Fatalf("Could not open trips info: %v\n", err)
 	}
 	defer tripsFile.Close()
 
@@ -109,7 +109,7 @@ func main() {
 
 	_, err = tripsReader.Read() // read the header
 	if err != nil {
-		log.Printf("Could not parse CSV: %v\n", err)
+		log.Fatalf("Could not parse CSV: %v\n", err)
 	}
 
 	rawCSVdata, _ := tripsReader.ReadAll() // read the rest
@@ -124,6 +124,10 @@ func main() {
 
 		routeDirections[rid][tid] = dir
 	}
+}
+
+func main() {
+	loadTripsData()
 
 	http.HandleFunc("/", mapHandler)
 	http.HandleFunc("/vehicles", vehicleHandler)
