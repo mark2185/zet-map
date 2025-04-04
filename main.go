@@ -8,7 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/MobilityData/gtfs-realtime-bindings/golang/gtfs"
@@ -61,8 +61,7 @@ func getDirection(route_id RouteID, trip_id TripID) string {
 	return routeDirections[route_id][trip_id]
 }
 
-var allVehicles = []Vehicle{}
-var mutex = sync.RWMutex{}
+var allVehicles atomic.Value
 var lastUpdateTimestamp uint64 = 0
 
 func updateVehiclesPosition() {
@@ -82,8 +81,7 @@ func updateVehiclesPosition() {
 
 		lastUpdateTimestamp = *feed.Header.Timestamp
 
-		mutex.Lock()
-		allVehicles = []Vehicle{}
+		vehicles := []Vehicle{}
 		for _, entity := range feed.Entity {
 			if entity.Vehicle != nil {
 				routeID := RouteID(*entity.Vehicle.Trip.RouteId)
@@ -92,7 +90,7 @@ func updateVehiclesPosition() {
 				if getDirection(routeID, tripID) != "0" {
 					directionIcon = "<"
 				}
-				allVehicles = append(allVehicles, Vehicle{
+				vehicles = append(vehicles, Vehicle{
 					Latitude:  *entity.Vehicle.Position.Latitude,
 					Longitude: *entity.Vehicle.Position.Longitude,
 					RouteID:   *entity.Vehicle.Trip.RouteId,
@@ -100,17 +98,13 @@ func updateVehiclesPosition() {
 				})
 			}
 		}
-		mutex.Unlock()
+		allVehicles.Store(vehicles)
 	}
 }
 
 func vehicleHandler(w http.ResponseWriter, r *http.Request) {
-	mutex.RLock()
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(allVehicles)
-
-	mutex.RUnlock()
+	json.NewEncoder(w).Encode(allVehicles.Load().([]Vehicle))
 }
 
 func mapHandler(w http.ResponseWriter, r *http.Request) {
