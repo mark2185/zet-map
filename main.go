@@ -8,6 +8,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
+	"time"
 
 	"github.com/MobilityData/gtfs-realtime-bindings/golang/gtfs"
 	"google.golang.org/protobuf/proto"
@@ -59,39 +61,56 @@ func getDirection(route_id RouteID, trip_id TripID) string {
 	return routeDirections[route_id][trip_id]
 }
 
-func getAllVehicles(feed *gtfs.FeedMessage) []Vehicle {
-	var vehicles []Vehicle
-	for _, entity := range feed.Entity {
-		if entity.Vehicle != nil {
-			routeID := RouteID(*entity.Vehicle.Trip.RouteId)
-			tripID := TripID(*entity.Vehicle.Trip.TripId)
-			directionIcon := ">"
-			if getDirection(routeID, tripID) != "0" {
-				directionIcon = "<"
-			}
-			vehicles = append(vehicles, Vehicle{
-				Latitude:  *entity.Vehicle.Position.Latitude,
-				Longitude: *entity.Vehicle.Position.Longitude,
-				RouteID:   *entity.Vehicle.Trip.RouteId,
-				Direction: directionIcon,
-			})
-		}
-	}
+var allVehicles = []Vehicle{}
+var mutex = sync.RWMutex{}
+var lastUpdateTimestamp uint64 = 0
 
-	return vehicles
+func updateVehiclesPosition() {
+	for {
+		feed, err := fetchGTFSRealTime(gtfsURL)
+		if err != nil {
+			log.Printf("Error: %v", err)
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
+		if feed.Header.Timestamp != nil && *feed.Header.Timestamp <= lastUpdateTimestamp {
+			log.Printf("Feed last updated: %v, local data age: %v, not refreshing data\n", *feed.Header.Timestamp, lastUpdateTimestamp)
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
+		lastUpdateTimestamp = *feed.Header.Timestamp
+
+		mutex.Lock()
+		allVehicles = []Vehicle{}
+		for _, entity := range feed.Entity {
+			if entity.Vehicle != nil {
+				routeID := RouteID(*entity.Vehicle.Trip.RouteId)
+				tripID := TripID(*entity.Vehicle.Trip.TripId)
+				directionIcon := ">"
+				if getDirection(routeID, tripID) != "0" {
+					directionIcon = "<"
+				}
+				allVehicles = append(allVehicles, Vehicle{
+					Latitude:  *entity.Vehicle.Position.Latitude,
+					Longitude: *entity.Vehicle.Position.Longitude,
+					RouteID:   *entity.Vehicle.Trip.RouteId,
+					Direction: directionIcon,
+				})
+			}
+		}
+		mutex.Unlock()
+	}
 }
 
 func vehicleHandler(w http.ResponseWriter, r *http.Request) {
-	feed, err := fetchGTFSRealTime(gtfsURL)
-	if err != nil {
-		log.Printf("Error: %v", err)
-	}
-
-	vehicles := getAllVehicles(feed)
+	mutex.RLock()
 
 	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(allVehicles)
 
-	json.NewEncoder(w).Encode(vehicles)
+	mutex.RUnlock()
 }
 
 func mapHandler(w http.ResponseWriter, r *http.Request) {
@@ -128,6 +147,8 @@ func loadTripsData() {
 
 func main() {
 	loadTripsData()
+
+	go updateVehiclesPosition()
 
 	http.HandleFunc("/", mapHandler)
 	http.HandleFunc("/vehicles", vehicleHandler)
