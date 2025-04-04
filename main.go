@@ -21,17 +21,20 @@ type Vehicle struct {
 	Latitude  float32 `json:"lat"`
 	Longitude float32 `json:"lon"`
 	RouteID   string  `json:"route_id"`
+	Headsign  string  `json:"headsign"`
 	Direction string  `json:"direction"`
+}
+
+type Trip struct {
+	Headsign  string
+	Direction string
 }
 
 type RouteID string
 type TripID string
+type Trips map[TripID]Trip
 
-type TripDirection map[TripID]string
-
-type RouteTrips map[RouteID]TripDirection
-
-var routeDirections = RouteTrips{}
+var Routes = map[RouteID]Trips{}
 
 func fetchGTFSRealTime(url string) (*gtfs.FeedMessage, error) {
 	resp, err := http.Get(url)
@@ -57,8 +60,8 @@ func fetchGTFSRealTime(url string) (*gtfs.FeedMessage, error) {
 	return feed, nil
 }
 
-func getDirection(route_id RouteID, trip_id TripID) string {
-	return routeDirections[route_id][trip_id]
+func getTrip(route_id RouteID, trip_id TripID) Trip {
+	return Routes[route_id][trip_id]
 }
 
 var allVehicles atomic.Value
@@ -86,14 +89,16 @@ func updateVehiclesPosition() {
 			if entity.Vehicle != nil {
 				routeID := RouteID(*entity.Vehicle.Trip.RouteId)
 				tripID := TripID(*entity.Vehicle.Trip.TripId)
+				trip := getTrip(routeID, tripID)
 				directionIcon := ">"
-				if getDirection(routeID, tripID) != "0" {
+				if trip.Direction != "0" {
 					directionIcon = "<"
 				}
 				vehicles = append(vehicles, Vehicle{
 					Latitude:  *entity.Vehicle.Position.Latitude,
 					Longitude: *entity.Vehicle.Position.Longitude,
 					RouteID:   *entity.Vehicle.Trip.RouteId,
+					Headsign:  trip.Headsign,
 					Direction: directionIcon,
 				})
 			}
@@ -128,14 +133,13 @@ func loadTripsData() {
 	rawCSVdata, _ := tripsReader.ReadAll() // read the rest
 
 	for _, row := range rawCSVdata {
-		rid := RouteID(row[0])
-		tid := TripID(row[2])
-		dir := row[5]
-		if _, exists := routeDirections[rid]; !exists {
-			routeDirections[rid] = TripDirection{}
+		routeID := RouteID(row[0])
+		if _, exists := Routes[routeID]; !exists {
+			Routes[routeID] = Trips{}
 		}
 
-		routeDirections[rid][tid] = dir
+		tripID := TripID(row[2])
+		Routes[routeID][tripID] = Trip{Headsign: row[3], Direction: row[5]}
 	}
 }
 

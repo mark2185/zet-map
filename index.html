@@ -44,11 +44,33 @@
             '17': '#52dfd6',
         }; // Stores colors for each route
 
+        // Function to invert a hex color
+        function invertColor(hex) {
+            // Remove # if present
+            hex = hex.replace(/^#/, '');
+
+            // Convert hex to RGB
+            let r = parseInt(hex.substring(0, 2), 16);
+            let g = parseInt(hex.substring(2, 4), 16);
+            let b = parseInt(hex.substring(4, 6), 16);
+
+            // Invert colors
+            r = 255 - r;
+            g = 255 - g;
+            b = 255 - b;
+
+            // Convert back to hex and return
+            return `rgb(${r}, ${g}, ${b})`;
+        }
+
         // Define a train icon
-        function getTrainIcon(routeID, color, direction) {
+        function getTrainIcon(routeID, color, direction, headsign) {
             var label = routeID + ">";
             if (direction === "<") {
                 label = "<" + routeID;
+            }
+            if (headsign.startsWith("Spr.")) {
+                color = invertColor(color);
             }
             return L.divIcon({
                 className: "custom-train-icon",
@@ -143,7 +165,7 @@
                 if (selectedRoutes.has(vehicle.route_id)) {
                     let color = getRouteColor(vehicle.route_id);
                     let marker = L.marker([vehicle.lat, vehicle.lon], {
-                        icon: getTrainIcon(vehicle.route_id, color, vehicle.direction)
+                        icon: getTrainIcon(vehicle.route_id, color, vehicle.direction, vehicle.headsign)
                     })
                     .addTo(map)
                     .bindPopup(`<b>Route:</b> ${vehicle.route_id}`);
