@@ -168,7 +168,7 @@
                         icon: getTrainIcon(vehicle.route_id, color, vehicle.direction, vehicle.headsign)
                     })
                     .addTo(map)
-                    .bindPopup(`<b>Route:</b> ${vehicle.route_id}`);
+                    .bindPopup(`${vehicle.route_id} (${vehicle.headsign})`);
 
                     markers.push(marker);
                 }
