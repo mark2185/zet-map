@@ -147,6 +147,7 @@ func main() {
 	loadTripsData()
 
 	go updateVehiclesPosition()
+	time.Sleep(2 * time.Second)
 
 	http.HandleFunc("/", mapHandler)
 	http.HandleFunc("/vehicles", vehicleHandler)
