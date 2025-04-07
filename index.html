@@ -29,6 +29,8 @@
     <script>
         var map = L.map('map').setView([45.8020, 15.9819], 13); // Zagreb
 
+        var lastRenderTimestamp = 0;
+
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; OpenStreetMap contributors'
         }).addTo(map);
@@ -110,9 +112,13 @@
             fetch('/vehicles')
                 .then(response => response.json())
                 .then(data => {
-                    allVehicles = data;
-                    updateRouteFilters();
-                    renderMarkers();
+                    allVehicles = data["vehicles"];
+                    lastUpdateTimestamp = data["last_updated"];
+                    if (lastUpdateTimestamp != lastRenderTimestamp) {
+                        lastRenderTimestamp = lastUpdateTimestamp;
+                        updateRouteFilters();
+                        renderMarkers();
+                    }
                 })
                 .catch(error => console.error("Error fetching vehicle data:", error));
         }

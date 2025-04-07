@@ -108,8 +108,17 @@ func updateVehiclesPosition() {
 }
 
 func vehicleHandler(w http.ResponseWriter, r *http.Request) {
+
+	response := struct {
+		LastUpdated uint64    `json:"last_updated"`
+		Vehicles    []Vehicle `json:"vehicles"`
+	}{
+		LastUpdated: lastUpdateTimestamp,
+		Vehicles:    allVehicles.Load().([]Vehicle),
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(allVehicles.Load().([]Vehicle))
+	json.NewEncoder(w).Encode(response)
 }
 
 func mapHandler(w http.ResponseWriter, r *http.Request) {
