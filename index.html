@@ -81,7 +81,6 @@
         }).addTo(map);
 
         var markers = [];
-        var allVehicles = [];
         var allRoutes = new Map();
         var routeColors = new Set(); // Stores colors for each route
         const tramLines = new Set([
@@ -177,27 +176,6 @@
             }
 
             return routeColors[routeID];
-        }
-
-        // Fetch vehicle data and update markers
-        function updateVehicles() {
-            fetch('/updatetime')
-                .then(response => response.json())
-                .then(lastUpdateTimestamp => {
-                    if (lastUpdateTimestamp != lastRenderTimestamp) {
-                        lastRenderTimestamp = lastUpdateTimestamp;
-                        fetch('/vehicles')
-                            .then(response => response.json())
-                            .then(data => {
-                                allRoutes = new Map(Object.entries(data["vehicles"]));
-                                allShapes = data["shapes"];
-                                updateRouteFilters();
-                                renderMarkers();
-                            })
-                            .catch(error => console.error("Error fetching vehicle data:", error));
-                    }
-                })
-                .catch(error => console.error("Error fetching data update time:", error));
         }
 
         // Generate route filter checkboxes with colors
@@ -358,9 +336,21 @@
             history.replaceState(null, '', '?' + selectedRoutes.join('&'));
         }
 
-        // Fetch and update data every 2 seconds
-        updateVehicles();
-        setInterval(updateVehicles, 2000);
+        const source = new EventSource('/events');
+
+        source.onmessage = function (event) {
+            try {
+                allRoutes = new Map(Object.entries(JSON.parse(event.data)));
+                updateRouteFilters(); // preserve search/filter state here
+                renderMarkers();
+            } catch (e) {
+                console.error("SSE error parsing data:", e);
+            }
+        };
+
+        source.onerror = function (e) {
+            console.error("SSE connection error:", e);
+        };
     </script>
 </body>
 </html>
