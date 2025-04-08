@@ -20,7 +20,6 @@ const gtfsURL = "https://zet.hr/gtfs-rt-protobuf"
 type Vehicle struct {
 	Latitude  float32 `json:"lat"`
 	Longitude float32 `json:"lon"`
-	RouteID   string  `json:"route_id"`
 	Headsign  string  `json:"headsign"`
 	Direction string  `json:"direction"`
 }
@@ -84,22 +83,27 @@ func updateVehiclesPosition() {
 
 		lastUpdateTimestamp = *feed.Header.Timestamp
 
-		vehicles := []Vehicle{}
+		vehicles := map[RouteID][]Vehicle{}
 		for _, entity := range feed.Entity {
 			if entity.Vehicle != nil {
 				routeID := RouteID(*entity.Vehicle.Trip.RouteId)
 				tripID := TripID(*entity.Vehicle.Trip.TripId)
 				trip := getTrip(routeID, tripID)
-				directionIcon := ">"
-				if trip.Direction != "0" {
-					directionIcon = "<"
+
+				if _, exists := vehicles[routeID]; !exists {
+					vehicles[routeID] = []Vehicle{}
 				}
-				vehicles = append(vehicles, Vehicle{
+				vehicles[routeID] = append(vehicles[routeID], Vehicle{
 					Latitude:  *entity.Vehicle.Position.Latitude,
 					Longitude: *entity.Vehicle.Position.Longitude,
-					RouteID:   *entity.Vehicle.Trip.RouteId,
 					Headsign:  trip.Headsign,
-					Direction: directionIcon,
+					Direction: func() string {
+						if trip.Direction != "0" {
+							return "<"
+						} else {
+							return ">"
+						}
+					}(),
 				})
 			}
 		}
@@ -115,11 +119,11 @@ func updatetimeHandler(w http.ResponseWriter, r *http.Request) {
 
 func vehicleHandler(w http.ResponseWriter, r *http.Request) {
 	response := struct {
-		LastUpdated uint64    `json:"last_updated"`
-		Vehicles    []Vehicle `json:"vehicles"`
+		LastUpdated uint64                `json:"last_updated"`
+		Vehicles    map[RouteID][]Vehicle `json:"vehicles"`
 	}{
 		LastUpdated: lastUpdateTimestamp,
-		Vehicles:    allVehicles.Load().([]Vehicle),
+		Vehicles:    allVehicles.Load().(map[RouteID][]Vehicle),
 	}
 
 	w.Header().Set("Content-Type", "application/json")

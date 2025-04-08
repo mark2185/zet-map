@@ -82,7 +82,7 @@
 
         var markers = [];
         var allVehicles = [];
-        var routeSet = new Set();
+        var allRoutes = new Map();
         var routeColors = new Set(); // Stores colors for each route
         const tramLines = new Set([
             '1', '2', '3', '4', '5', '6', '7', '8',
@@ -189,7 +189,7 @@
                         fetch('/vehicles')
                             .then(response => response.json())
                             .then(data => {
-                                allVehicles = data["vehicles"];
+                                allRoutes = new Map(Object.entries(data["vehicles"]));
                                 allShapes = data["shapes"];
                                 updateRouteFilters();
                                 renderMarkers();
@@ -215,11 +215,8 @@
             tramDiv.innerHTML = "";
             busDiv.innerHTML = "";
 
-            routeSet.clear();
-            allVehicles.forEach(v => routeSet.add(v.route_id));
-
             // Sort route IDs
-            let sortedRoutes = Array.from(routeSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+            let sortedRoutes = Array.from(allRoutes.keys()).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
             // Rebuild checkboxes
             sortedRoutes.forEach(routeID => {
@@ -259,18 +256,22 @@
                 selectedRoutes.add(input.value);
             });
 
-            allVehicles.forEach(vehicle => {
-                if (selectedRoutes.has(vehicle.route_id)) {
-                    let color = getRouteColor(vehicle.route_id);
+            for (let [routeID, vehicles] of allRoutes.entries()) {
+                if (!selectedRoutes.has(routeID)) {
+                    continue;
+                }
+
+                let color = getRouteColor(routeID);
+                vehicles.forEach(vehicle => {
                     let marker = L.marker([vehicle.lat, vehicle.lon], {
-                        icon: getTrainIcon(vehicle.route_id, color, vehicle.direction, vehicle.headsign)
+                        icon: getTrainIcon(routeID, color, vehicle.direction, vehicle.headsign)
                     })
                     .addTo(map)
-                    .bindPopup(`${vehicle.route_id} (${vehicle.headsign})`);
+                    .bindPopup(`${routeID} (${vehicle.headsign})`);
 
                     markers.push(marker);
-                }
-            });
+                })
+            }
         }
 
         // Function to add the user's location
