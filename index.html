@@ -44,7 +44,10 @@
         <button id="filter-button">Show/Hide Filters</button>
         <div id="controls">
             <h4>Filter by Route</h4>
-            <div id="routeFilters"></div>
+            <div><strong>Trams</strong></div>
+            <div id="tramFilters"></div>
+            <div style="margin-top:10px"><strong>Buses</strong></div>
+            <div id="busFilters"></div>
         </div>
     </div>
 
@@ -180,14 +183,17 @@
 
         // Generate route filter checkboxes with colors
         function updateRouteFilters() {
-            let filterDiv = document.getElementById("routeFilters");
+            let tramDiv = document.getElementById("tramFilters");
+            let busDiv = document.getElementById("busFilters");
 
             // Store current checked states from URL
             let urlParams = new URLSearchParams(window.location.search);
             let checkedRoutesFromURL = new Set(urlParams.getAll("routes"));
 
             // Clear existing checkboxes
-            filterDiv.innerHTML = "";
+            tramDiv.innerHTML = "";
+            busDiv.innerHTML = "";
+
             routeSet.clear();
             allVehicles.forEach(v => routeSet.add(v.route_id));
 
@@ -200,11 +206,16 @@
                 let label = document.createElement("label");
                 let isChecked = checkedRoutesFromURL.has(routeID) ? "checked" : ""; // Preserve state from URL
                 label.innerHTML = `<input type="checkbox" value="${routeID}" ${isChecked}> <span style="color:${color}; font-weight:bold;">Route ${routeID}</span>`;
-                filterDiv.appendChild(label);
+
+                if (tramLines.has(routeID)) {
+                    tramDiv.appendChild(label);
+                } else {
+                    busDiv.appendChild(label);
+                }
             });
 
             // Reattach event listeners
-            document.querySelectorAll("#routeFilters input").forEach(input => {
+            document.querySelectorAll("#tramFilters input, #busFilters input").forEach(input => {
                 input.addEventListener("change", function() {
                     updateURL();
                     renderMarkers();
@@ -218,7 +229,7 @@
             markers = [];
 
             let selectedRoutes = new Set();
-            document.querySelectorAll("#routeFilters input:checked").forEach(input => {
+            document.querySelectorAll("#tramFilters input:checked, #busFilters input:checked").forEach(input => {
                 selectedRoutes.add(input.value);
             });
 
@@ -304,7 +315,7 @@
         function updateURL() {
             let selectedRoutes = [];
             document
-                .querySelectorAll('#routeFilters input:checked')
+                .querySelectorAll('#tramFilters input:checked, #busFilters input:checked')
                 .forEach((input) => {
                     selectedRoutes.push('routes=' + input.value);
                 });
