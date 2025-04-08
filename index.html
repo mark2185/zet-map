@@ -66,13 +66,29 @@
         var markers = [];
         var allVehicles = [];
         var routeSet = new Set();
-        var routeColors = {
-            '2': '#d652df',
-            '4': '#8f52df',
-            '5': '#df525b',
-            '14': '#a2df52',
-            '17': '#52dfd6',
-        }; // Stores colors for each route
+        var routeColors = new Set(); // Stores colors for each route
+        const tramLines = new Set([
+            '1', '2', '3', '4', '5', '6', '7', '8',
+            '9', '11', '12', '13', '14', '15', '17'
+        ]);
+
+        const tramColors = {
+            '1': '#1f77b4',
+            '2': '#ff7f0e',
+            '3': '#2ca02c',
+            '4': '#d62728',
+            '5': '#9467bd',
+            '6': '#8c564b',
+            '7': '#e377c2',
+            '8': '#7f7f7f',
+            '9': '#bcbd22',
+            '11': '#17becf',
+            '12': '#a05d56',
+            '13': '#637939',
+            '14': '#d6616b',
+            '15': '#ce6dbd',
+            '17': '#6b486b'
+        };
 
         // Function to invert a hex color
         function invertColor(hex) {
@@ -129,9 +145,20 @@
 
         // Generate random color for a route if not already assigned
         function getRouteColor(routeID) {
-            if (!routeColors[routeID]) {
-                routeColors[routeID] = '#' + Math.floor(Math.random() * 16777215).toString(16); // Random hex color
+            if (tramLines.has(routeID)) {
+                return tramColors[routeID] || '#000'; // fallback
             }
+
+            if (!routeColors[routeID]) {
+                // Hash-based HSL for buses
+                let hash = 0;
+                for (let i = 0; i < routeID.length; i++) {
+                    hash = routeID.charCodeAt(i) + ((hash << 5) - hash);
+                }
+                const hue = Math.abs(hash) % 360;
+                routeColors[routeID] = `hsl(${hue}, 60%, 50%)`;
+            }
+
             return routeColors[routeID];
         }
 
