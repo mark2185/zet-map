@@ -44,6 +44,7 @@
         <button id="filter-button">Show/Hide Filters</button>
         <div id="controls">
             <h4>Filter by Route</h4>
+            <input type="text" id="routeSearch" placeholder="Search routes..." style="width: 90%; margin-bottom: 10px; padding: 10px; border-radius: 4px; border: 1px solid #ccc;">
             <div><strong>Trams</strong></div>
             <div id="tramFilters"></div>
             <div style="margin-top:10px"><strong>Buses</strong></div>
@@ -185,6 +186,8 @@
         function updateRouteFilters() {
             let tramDiv = document.getElementById("tramFilters");
             let busDiv = document.getElementById("busFilters");
+            let searchInput = document.getElementById("routeSearch");
+            let searchQuery = searchInput.value.toLowerCase();
 
             // Store current checked states from URL
             let urlParams = new URLSearchParams(window.location.search);
@@ -205,7 +208,12 @@
                 let color = getRouteColor(routeID);
                 let label = document.createElement("label");
                 let isChecked = checkedRoutesFromURL.has(routeID) ? "checked" : ""; // Preserve state from URL
-                label.innerHTML = `<input type="checkbox" value="${routeID}" ${isChecked}> <span style="color:${color}; font-weight:bold;">Route ${routeID}</span>`;
+                let routeText = `Route ${routeID}`;
+                label.innerHTML = `<input type="checkbox" value="${routeID}" ${isChecked}> <span style="color:${color}; font-weight:bold;">${routeText}</span>`;
+
+                if (!routeText.includes(searchQuery)) {
+                    label.style.display = "none";
+                }
 
                 if (tramLines.has(routeID)) {
                     tramDiv.appendChild(label);
@@ -309,6 +317,15 @@
             updateRouteFilters();
 
             addUserLocation();
+        });
+
+        document.getElementById("routeSearch").addEventListener("input", function () {
+            const query = this.value.toLowerCase();
+
+            document.querySelectorAll("#tramFilters label, #busFilters label").forEach(label => {
+                const text = label.textContent.toLowerCase();
+                label.style.display = text.includes(query) ? "block" : "none";
+            });
         });
 
         // Update URL with selected routes
