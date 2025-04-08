@@ -181,18 +181,23 @@
 
         // Fetch vehicle data and update markers
         function updateVehicles() {
-            fetch('/vehicles')
+            fetch('/updatetime')
                 .then(response => response.json())
-                .then(data => {
-                    allVehicles = data["vehicles"];
-                    lastUpdateTimestamp = data["last_updated"];
+                .then(lastUpdateTimestamp => {
                     if (lastUpdateTimestamp != lastRenderTimestamp) {
                         lastRenderTimestamp = lastUpdateTimestamp;
-                        updateRouteFilters();
-                        renderMarkers();
+                        fetch('/vehicles')
+                            .then(response => response.json())
+                            .then(data => {
+                                allVehicles = data["vehicles"];
+                                allShapes = data["shapes"];
+                                updateRouteFilters();
+                                renderMarkers();
+                            })
+                            .catch(error => console.error("Error fetching vehicle data:", error));
                     }
                 })
-                .catch(error => console.error("Error fetching vehicle data:", error));
+                .catch(error => console.error("Error fetching data update time:", error));
         }
 
         // Generate route filter checkboxes with colors
