@@ -107,8 +107,13 @@ func updateVehiclesPosition() {
 	}
 }
 
-func vehicleHandler(w http.ResponseWriter, r *http.Request) {
 
+func updatetimeHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(lastUpdateTimestamp)
+}
+
+func vehicleHandler(w http.ResponseWriter, r *http.Request) {
 	response := struct {
 		LastUpdated uint64    `json:"last_updated"`
 		Vehicles    []Vehicle `json:"vehicles"`
@@ -160,6 +165,7 @@ func main() {
 
 	http.HandleFunc("/", mapHandler)
 	http.HandleFunc("/vehicles", vehicleHandler)
+	http.HandleFunc("/updatetime", updatetimeHandler)
 
 	log.Println("Server running on port 8080")
 	log.Fatal(http.ListenAndServe("0.0.0.0:8080", nil))
