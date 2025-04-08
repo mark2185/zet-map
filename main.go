@@ -75,13 +75,12 @@ func updateVehiclesPosition() {
 			continue
 		}
 
-		if feed.Header.Timestamp != nil && *feed.Header.Timestamp <= lastUpdateTimestamp {
-			log.Printf("Feed last updated: %v, local data age: %v, not refreshing data\n", *feed.Header.Timestamp, lastUpdateTimestamp)
+		if feed.Header.Timestamp != nil && *feed.Header.Timestamp <= atomic.LoadUint64(&lastUpdateTimestamp) {
 			time.Sleep(2 * time.Second)
 			continue
 		}
 
-		lastUpdateTimestamp = *feed.Header.Timestamp
+		atomic.StoreUint64(&lastUpdateTimestamp, *feed.Header.Timestamp)
 
 		vehicles := map[RouteID][]Vehicle{}
 		for _, entity := range feed.Entity {
@@ -111,12 +110,6 @@ func updateVehiclesPosition() {
 	}
 }
 
-
-func updatetimeHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(lastUpdateTimestamp)
-}
-
 func vehicleHandler(w http.ResponseWriter, r *http.Request) {
 	response := struct {
 		LastUpdated uint64                `json:"last_updated"`
@@ -132,6 +125,45 @@ func vehicleHandler(w http.ResponseWriter, r *http.Request) {
 
 func mapHandler(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "index.html")
+}
+
+func sseHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("SSE client connected")
+
+	// Setup headers for SSE
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*") // optional
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported!", http.StatusInternalServerError)
+		return
+	}
+
+	clientLastUpdate := uint64(0)
+
+	// Keep the connection alive and send updates
+	for {
+		current := atomic.LoadUint64(&lastUpdateTimestamp)
+		if current > clientLastUpdate {
+			clientLastUpdate = current
+
+			vehicles := allVehicles.Load().(map[RouteID][]Vehicle)
+			data, _ := json.Marshal(vehicles)
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+		}
+
+		time.Sleep(1 * time.Second)
+
+		// Optional: detect client disconnect
+		if r.Context().Err() != nil {
+			log.Println("SSE client disconnected")
+			return
+		}
+	}
 }
 
 func loadTripsData() {
@@ -169,7 +201,7 @@ func main() {
 
 	http.HandleFunc("/", mapHandler)
 	http.HandleFunc("/vehicles", vehicleHandler)
-	http.HandleFunc("/updatetime", updatetimeHandler)
+	http.HandleFunc("/events", sseHandler)
 
 	log.Println("Server running on port 8080")
 	log.Fatal(http.ListenAndServe("0.0.0.0:8080", nil))
