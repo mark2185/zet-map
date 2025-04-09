@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"os"
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -23,7 +25,7 @@ type Vehicle struct {
 	Latitude  float32 `json:"lat"`
 	Longitude float32 `json:"lon"`
 	Headsign  string  `json:"headsign"`
-	Direction string  `json:"direction"`
+	Direction int     `json:"direction"`
 }
 
 type Trip struct {
@@ -70,7 +72,21 @@ func getTrip(route_id RouteID, trip_id TripID) Trip {
 var allVehicles atomic.Value
 var lastUpdateTimestamp uint64 = 0
 
+type Point struct {
+	Lat float64 `json:"lat"`
+	Lon float64 `json:"lon"`
+}
 
+func calculateBearing(p1, p2 Point) float64 {
+	dx := p2.Lon - p1.Lon
+	dy := p2.Lat - p1.Lat
+
+	angle := math.Atan2(dy, dx) * 180 / math.Pi
+	if angle < 0 {
+		return angle + 360
+	}
+	return angle
+}
 
 func getVehiclesData(feed *gtfs.FeedMessage) ([]*gtfs.VehiclePosition, error) {
 	vehicles := []*gtfs.VehiclePosition{}
@@ -82,22 +98,59 @@ func getVehiclesData(feed *gtfs.FeedMessage) ([]*gtfs.VehiclePosition, error) {
 	return vehicles, nil
 }
 
-func updateGlobalRoutes(vehicles []*gtfs.VehiclePosition) {
-	newVehicles := map[RouteID]Vehicles{}
+func getRoutes(vehicles []*gtfs.VehiclePosition) map[RouteID]Vehicles {
+	routes := map[RouteID]Vehicles{}
 	for _, v := range vehicles {
 		routeID := RouteID(v.GetTrip().GetRouteId())
-		if _, exists := newVehicles[routeID]; !exists {
-			newVehicles[routeID] = Vehicles{}
+		if _, exists := routes[routeID]; !exists {
+			routes[routeID] = Vehicles{}
 		}
-		newVehicles[routeID] = append(newVehicles[routeID], Vehicle{
+		routes[routeID] = append(routes[routeID], Vehicle{
 			ID:        v.GetVehicle().GetId(),
 			Latitude:  v.GetPosition().GetLatitude(),
 			Longitude: v.GetPosition().GetLongitude(),
 			Headsign:  getTrip(routeID, TripID(v.GetTrip().GetTripId())).Headsign,
 		})
 	}
+	return routes
+}
 
-	allVehicles.Store(newVehicles)
+func calculateVehicleBearings(oldRoutes, newRoutes map[RouteID]Vehicles) map[RouteID]Vehicles {
+	for routeID, vehicles := range newRoutes {
+		// new route was added, no reason to calculate anything, all the directions are irrelevant
+		if _, exists := oldRoutes[routeID]; !exists {
+			continue
+		}
+
+		oldRouteVehicles := oldRoutes[routeID]
+		for i, newVehicle := range vehicles {
+			sameID := func(v Vehicle) bool { return newVehicle.ID == v.ID }
+
+			oldVehicleIdx := slices.IndexFunc(oldRoutes[routeID], sameID)
+			// a new vehicle, direction is irrelevant
+			if oldVehicleIdx == -1 {
+				continue
+			}
+
+			oldVehicle := oldRouteVehicles[oldVehicleIdx]
+
+			oldPosition := Point{Lat: float64(oldVehicle.Latitude), Lon: float64(oldVehicle.Longitude)}
+			newPosition := Point{Lat: float64(newVehicle.Latitude), Lon: float64(newVehicle.Longitude)}
+
+			newAzimuth := int(calculateBearing(oldPosition, newPosition))
+			oldAzimuth := oldVehicle.Direction
+
+			newRoutes[routeID][i].Direction = oldAzimuth
+			// if the bearing does not differ much, ignore the update
+			threshold := float64(3) // degrees
+			if math.Abs(float64(newAzimuth-oldVehicle.Direction)) > threshold {
+				newRoutes[routeID][i].Direction = newAzimuth
+			}
+
+		}
+	}
+
+	return newRoutes
 }
 func vehicleHandler(w http.ResponseWriter, r *http.Request) {
 	response := struct {
@@ -195,7 +248,7 @@ func main() {
 		log.Fatalf("Failed to load initial data: %v", err)
 	}
 
-	updateGlobalRoutes(vehicles)
+	allVehicles.Store(getRoutes(vehicles))
 
 	go func() {
 		for {
@@ -222,7 +275,12 @@ func main() {
 				continue
 			}
 
-			updateGlobalRoutes(vehicles)
+			newRoutes := getRoutes(vehicles)
+			oldRoutes := allVehicles.Load().(map[RouteID]Vehicles)
+
+			updatedRoutes := calculateVehicleBearings(oldRoutes, newRoutes)
+
+			allVehicles.Store(updatedRoutes)
 		}
 	}()
 
@@ -232,8 +290,4 @@ func main() {
 
 	log.Println("Server running on port 8080")
 	log.Fatal(http.ListenAndServe("0.0.0.0:8080", nil))
-
-	// if feed.Header.Timestamp != nil {
-	// fmt.Printf("Feed last updated: %v\n", *feed.Header.Timestamp)
-	// }
 }
