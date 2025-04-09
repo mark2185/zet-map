@@ -88,6 +88,13 @@ func calculateBearing(p1, p2 Point) float64 {
 	return angle
 }
 
+func calculateDistance(p1, p2 Point) float64 {
+	dx := p2.Lon - p1.Lon
+	dy := p2.Lat - p1.Lat
+
+	return math.Sqrt(dx*dx + dy*dy)
+}
+
 func getVehiclesData(feed *gtfs.FeedMessage) ([]*gtfs.VehiclePosition, error) {
 	vehicles := []*gtfs.VehiclePosition{}
 	for _, entity := range feed.Entity {
@@ -141,6 +148,14 @@ func calculateVehicleBearings(oldRoutes, newRoutes map[RouteID]Vehicles) map[Rou
 			oldAzimuth := oldVehicle.Direction
 
 			newRoutes[routeID][i].Direction = oldAzimuth
+
+			// if the position hasn't changed a lot, it's probably a sitting duck
+			moveThreshold := 1e-5
+			distance := calculateDistance(oldPosition, newPosition)
+			if distance < moveThreshold {
+				continue
+			}
+
 			// if the bearing does not differ much, ignore the update
 			threshold := float64(3) // degrees
 			if math.Abs(float64(newAzimuth-oldVehicle.Direction)) > threshold {
