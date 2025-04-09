@@ -17,7 +17,9 @@ import (
 
 const gtfsURL = "https://zet.hr/gtfs-rt-protobuf"
 
+type Vehicles []Vehicle
 type Vehicle struct {
+	ID        string  `json:"id"`
 	Latitude  float32 `json:"lat"`
 	Longitude float32 `json:"lon"`
 	Headsign  string  `json:"headsign"`
@@ -33,7 +35,9 @@ type RouteID string
 type TripID string
 type Trips map[TripID]Trip
 
-var Routes = map[RouteID]Trips{}
+type RoutesToTrips map[RouteID]Trips
+
+var routesToTrips = RoutesToTrips{}
 
 func fetchGTFSRealTime(url string) (*gtfs.FeedMessage, error) {
 	resp, err := http.Get(url)
@@ -60,63 +64,46 @@ func fetchGTFSRealTime(url string) (*gtfs.FeedMessage, error) {
 }
 
 func getTrip(route_id RouteID, trip_id TripID) Trip {
-	return Routes[route_id][trip_id]
+	return routesToTrips[route_id][trip_id]
 }
 
 var allVehicles atomic.Value
 var lastUpdateTimestamp uint64 = 0
 
-func updateVehiclesPosition() {
-	for {
-		feed, err := fetchGTFSRealTime(gtfsURL)
-		if err != nil {
-			log.Printf("Error: %v", err)
-			time.Sleep(2 * time.Second)
-			continue
+
+
+func getVehiclesData(feed *gtfs.FeedMessage) ([]*gtfs.VehiclePosition, error) {
+	vehicles := []*gtfs.VehiclePosition{}
+	for _, entity := range feed.Entity {
+		if entity.Vehicle != nil {
+			vehicles = append(vehicles, entity.Vehicle)
 		}
-
-		if feed.Header.Timestamp != nil && *feed.Header.Timestamp <= atomic.LoadUint64(&lastUpdateTimestamp) {
-			time.Sleep(2 * time.Second)
-			continue
-		}
-
-		atomic.StoreUint64(&lastUpdateTimestamp, *feed.Header.Timestamp)
-
-		vehicles := map[RouteID][]Vehicle{}
-		for _, entity := range feed.Entity {
-			if entity.Vehicle != nil {
-				routeID := RouteID(*entity.Vehicle.Trip.RouteId)
-				tripID := TripID(*entity.Vehicle.Trip.TripId)
-				trip := getTrip(routeID, tripID)
-
-				if _, exists := vehicles[routeID]; !exists {
-					vehicles[routeID] = []Vehicle{}
-				}
-				vehicles[routeID] = append(vehicles[routeID], Vehicle{
-					Latitude:  *entity.Vehicle.Position.Latitude,
-					Longitude: *entity.Vehicle.Position.Longitude,
-					Headsign:  trip.Headsign,
-					Direction: func() string {
-						if trip.Direction != "0" {
-							return "<"
-						} else {
-							return ">"
-						}
-					}(),
-				})
-			}
-		}
-		allVehicles.Store(vehicles)
 	}
+	return vehicles, nil
 }
 
+func updateGlobalRoutes(vehicles []*gtfs.VehiclePosition) {
+	newVehicles := map[RouteID]Vehicles{}
+	for _, v := range vehicles {
+		routeID := RouteID(v.GetTrip().GetRouteId())
+		if _, exists := newVehicles[routeID]; !exists {
+			newVehicles[routeID] = Vehicles{}
+		}
+		newVehicles[routeID] = append(newVehicles[routeID], Vehicle{
+			ID:        v.GetVehicle().GetId(),
+			Latitude:  v.GetPosition().GetLatitude(),
+			Longitude: v.GetPosition().GetLongitude(),
+			Headsign:  getTrip(routeID, TripID(v.GetTrip().GetTripId())).Headsign,
+		})
+	}
+
+	allVehicles.Store(newVehicles)
+}
 func vehicleHandler(w http.ResponseWriter, r *http.Request) {
 	response := struct {
-		LastUpdated uint64                `json:"last_updated"`
-		Vehicles    map[RouteID][]Vehicle `json:"vehicles"`
+		Vehicles map[RouteID]Vehicles `json:"vehicles"`
 	}{
-		LastUpdated: lastUpdateTimestamp,
-		Vehicles:    allVehicles.Load().(map[RouteID][]Vehicle),
+		Vehicles: allVehicles.Load().(map[RouteID]Vehicles),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -150,7 +137,7 @@ func sseHandler(w http.ResponseWriter, r *http.Request) {
 		if current > clientLastUpdate {
 			clientLastUpdate = current
 
-			vehicles := allVehicles.Load().(map[RouteID][]Vehicle)
+			vehicles := allVehicles.Load().(map[RouteID]Vehicles)
 			data, _ := json.Marshal(vehicles)
 			fmt.Fprintf(w, "data: %s\n\n", data)
 			flusher.Flush()
@@ -184,20 +171,60 @@ func loadTripsData() {
 
 	for _, row := range rawCSVdata {
 		routeID := RouteID(row[0])
-		if _, exists := Routes[routeID]; !exists {
-			Routes[routeID] = Trips{}
+		if _, exists := routesToTrips[routeID]; !exists {
+			routesToTrips[routeID] = Trips{}
 		}
 
 		tripID := TripID(row[2])
-		Routes[routeID][tripID] = Trip{Headsign: row[3], Direction: row[5]}
+		routesToTrips[routeID][tripID] = Trip{Headsign: row[3], Direction: row[5]}
 	}
 }
 
 func main() {
 	loadTripsData()
 
-	go updateVehiclesPosition()
-	time.Sleep(2 * time.Second)
+	feed, err := fetchGTFSRealTime(gtfsURL)
+	if err != nil {
+		log.Fatalf("Failed to load initial data: %v", err)
+	}
+	if feed.Header.Timestamp != nil {
+		atomic.StoreUint64(&lastUpdateTimestamp, *feed.Header.Timestamp)
+	}
+	vehicles, err := getVehiclesData(feed)
+	if err != nil {
+		log.Fatalf("Failed to load initial data: %v", err)
+	}
+
+	updateGlobalRoutes(vehicles)
+
+	go func() {
+		for {
+			time.Sleep(2 * time.Second)
+
+			feed, err := fetchGTFSRealTime(gtfsURL)
+			if err != nil {
+				log.Printf("Failed to fetch GTFS data: %v", err)
+				continue
+			}
+
+			if feed.Header.Timestamp != nil {
+				headerTimestamp := *feed.Header.Timestamp
+				cachedTimestamp := atomic.LoadUint64(&lastUpdateTimestamp)
+				if newDataAvailable := cachedTimestamp < headerTimestamp; !newDataAvailable {
+					continue
+				}
+				atomic.StoreUint64(&lastUpdateTimestamp, headerTimestamp)
+			}
+
+			vehicles, err := getVehiclesData(feed)
+			if err != nil {
+				log.Printf("Failed to get vehicles data: %v", err)
+				continue
+			}
+
+			updateGlobalRoutes(vehicles)
+		}
+	}()
 
 	http.HandleFunc("/", mapHandler)
 	http.HandleFunc("/vehicles", vehicleHandler)
