@@ -72,9 +72,7 @@
             zoomControl: false // Disable default zoom buttons because they clash with the route filter
         }).setView([45.8020, 15.9819], 13); // Zagreb
 
-        L.control.zoom({ position: 'bottomright' }).addTo(map);
-
-        var lastRenderTimestamp = 0;
+        L.control.zoom({position: 'bottomright' }).addTo(map);
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; OpenStreetMap contributors'
@@ -128,13 +126,6 @@
         // Define a train icon
         function getTrainIcon(routeID, color, direction, headsign) {
             const label = routeID;
-            const angleDeg = direction;
-            const angleRad = angleDeg * (Math.PI / 180);
-
-            const radius = 30; // Distance from center (in px)
-
-            const x = radius * Math.cos(angleRad);
-            const y = radius * Math.sin(angleRad);
 
             if (headsign.startsWith("Spr.")) {
                 color = invertColor(color);
@@ -157,7 +148,7 @@
                             left: 50%;
                             z-index: 9999;
                             transform-origin: center;
-                            transform: translate(-50%, -50%) rotate(${-angleDeg}deg);
+                            transform: translate(-50%, -50%) rotate(${-direction}deg);
                             pointer-events: none;
                             display: inline-block;
                         ">
@@ -227,7 +218,7 @@
             busDiv.innerHTML = "";
 
             // Sort route IDs
-            let sortedRoutes = Array.from(allRoutes.keys()).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+            let sortedRoutes = Array.from(allRoutes.keys()).sort((a, b) => a.localeCompare(b, undefined, {numeric: true}));
 
             // Rebuild checkboxes
             sortedRoutes.forEach(routeID => {
@@ -259,31 +250,71 @@
 
         // Render train icons on the map
         function renderMarkers() {
-            markers.forEach(marker => map.removeLayer(marker));
-            markers = [];
-
             let selectedRoutes = new Set();
             document.querySelectorAll("#tramFilters input:checked, #busFilters input:checked").forEach(input => {
                 selectedRoutes.add(input.value);
             });
 
-            for (let [routeID, vehicles] of allRoutes.entries()) {
-                if (!selectedRoutes.has(routeID)) {
-                    continue;
-                }
+                for (let [routeID, vehicles] of allRoutes.entries()) {
+                    if (!selectedRoutes.has(routeID)) {
+                        continue;
+                    }
 
-                let color = getRouteColor(routeID);
-                vehicles.forEach(vehicle => {
-                    let marker = L.marker([vehicle.lat, vehicle.lon], {
-                        icon: getTrainIcon(routeID, color, vehicle.direction, vehicle.headsign)
-                    })
-                    .addTo(map)
-                    .bindPopup(`${routeID} (${vehicle.headsign})`);
-
-                    markers.push(marker);
+                    let color = getRouteColor(routeID);
+                    vehicles.forEach(vehicle => {
+                        let marker = markers.find(marker => marker.id === vehicle.id);
+                        if (marker == null) {
+                            marker = L.marker([vehicle.lat, vehicle.lon], {
+                                icon: getTrainIcon(routeID, color, vehicle.direction, vehicle.headsign)
+                            })
+                                .addTo(map)
+                                .bindPopup(`${routeID} (${vehicle.headsign})`);
+                            marker.id = vehicle.id;
+                            marker.animate = () => {
+                                if (marker.abortController != null) {
+                                    marker.abortController.abort()
+                                }
+                                marker.abortController = new AbortController();
+                                marker.currentPromise = animateMarkerPosition(marker, marker.abortController.signal)
+                            }
+                        markers.push(marker);
+                    } else {
+                        marker.oldPosition = marker._latlng;
+                        marker.newPosition = {lat: vehicle.lat, lng: vehicle.lon};
+                        marker.direction = vehicle.direction;
+                        marker.animate();
+                    }
                 })
             }
-        }
+    }
+
+    function delay(time) {
+        return new Promise(resolve => setTimeout(resolve, time));
+    }
+
+    function animateMarkerPosition(marker, signal) {
+        return new Promise(async (resolve, reject) => {
+            const currentPosition = marker.oldPosition;
+            const endPosition = marker.newPosition;
+            const moveFrequency = 50;
+            const animationDuration = 2000;
+            const steps = animationDuration / moveFrequency;
+
+            const latitudeStep  = (endPosition.lat - currentPosition.lat) / steps;
+            const longitudeStep = (endPosition.lng - currentPosition.lng) / steps;
+            for (let step = 1; step <= steps; step++) {
+                if (signal.aborted) break;
+                await delay(moveFrequency);
+                currentPosition.lat += latitudeStep;
+                currentPosition.lng += longitudeStep;
+                marker.setLatLng(currentPosition);
+                let style = marker._icon.getElementsByTagName("span")[0].style;
+                style.transform = style.transform.replace(/rotate\([^)]*\)/, `rotate(${-marker.direction}deg)`);
+            }
+
+            resolve();
+        })
+    }
 
         // Function to add the user's location
         function addUserLocation() {
@@ -355,7 +386,7 @@
             addUserLocation();
         });
 
-        document.getElementById("routeSearch").addEventListener("input", function () {
+        document.getElementById("routeSearch").addEventListener("input", function() {
             const query = this.value.toLowerCase();
 
             document.querySelectorAll("#tramFilters label, #busFilters label").forEach(label => {
