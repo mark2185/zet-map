@@ -305,7 +305,7 @@ func main() {
 
 	http.HandleFunc("/", mapHandler)
 	http.HandleFunc("/favicon.ico", faviconHandler)
-	http.HandleFunc("/vehicles", vehicleHandler)
+	// http.HandleFunc("/vehicles", vehicleHandler)
 	http.HandleFunc("/events", sseHandler)
 
 	log.Println("Server running on port 8080")
