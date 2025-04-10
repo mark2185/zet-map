@@ -167,6 +167,10 @@ func calculateVehicleBearings(oldRoutes, newRoutes map[RouteID]Vehicles) map[Rou
 
 	return newRoutes
 }
+func faviconHandler(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "data/favicon-32x32.png")
+}
+
 func vehicleHandler(w http.ResponseWriter, r *http.Request) {
 	response := struct {
 		Vehicles map[RouteID]Vehicles `json:"vehicles"`
@@ -300,6 +304,7 @@ func main() {
 	}()
 
 	http.HandleFunc("/", mapHandler)
+	http.HandleFunc("/favicon.ico", faviconHandler)
 	http.HandleFunc("/vehicles", vehicleHandler)
 	http.HandleFunc("/events", sseHandler)
 
