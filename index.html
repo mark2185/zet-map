@@ -151,19 +151,27 @@
                         <!-- Direction Indicator-->
                         <span style="
                             position: absolute;
-                            height: 40px;
-                            width: 40px;
-                            top: 0;
+                            height: 70px;
+                            width: 70px;
+                            top: 50%;
+                            left: 50%;
                             z-index: 9999;
-                            left: 0;
-                            font-size: 25px;
-                            font-weight: bold;
-                            color: ${color};
-                            text-align: center;
-                            transform: translate(${x}px, ${-y}px) rotate(-${angleDeg}deg);
-                            -webkit-text-stroke-width: 1px;
-                            -webkit-text-stroke-color: black;
-                        ">▶</span>
+                            transform-origin: center;
+                            transform: translate(-50%, -50%) rotate(${-angleDeg}deg);
+                            pointer-events: none;
+                            display: inline-block;
+                        ">
+                            <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                                <!-- Arrow (equilateral triangle) -->
+                                <polygon
+                                    points="80,40 100,50 80,60"
+                                    fill="${color}"
+                                    stroke="black"
+                                    stroke-width="2"
+                                    stroke-linejoin="round"
+                                />
+                            </svg>
+                        </span>
 
                         <!-- Label -->
                         <span style="
