@@ -326,6 +326,12 @@
             });
         }
 
+        // hide filters if the URL contains some routes
+        let urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.size > 0) {
+            document.getElementById('controls').classList.toggle('hidden')
+        }
+
         // Function to toggle the visibility of the controls div
         document.addEventListener('DOMContentLoaded', function() {
             const filterButton = document.getElementById('filter-button');
