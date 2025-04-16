@@ -68,9 +68,19 @@
     <div id="map"></div>
 
     <script>
+        const initialZoomLevel = window.localStorage.getItem("zoomLevel") || 13;
+        const initialCenter = JSON.parse(window.localStorage.getItem("mapCenter")) || {lat: 45.8020, lng: 15.9819}; // Zagreb
         var map = L.map('map', {
             zoomControl: false // Disable default zoom buttons because they clash with the route filter
-        }).setView([45.8020, 15.9819], 13); // Zagreb
+        }).setView([initialCenter.lat, initialCenter.lng], initialZoomLevel);
+
+        map.on('zoomend', function() {
+            window.localStorage.setItem("zoomLevel", map.getZoom());
+        });
+
+        map.on('moveend', function(e) {
+            window.localStorage.setItem("mapCenter", JSON.stringify(map.getCenter()));
+        });
 
         L.control.zoom({ position: 'bottomright' }).addTo(map);
 
