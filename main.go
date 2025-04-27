@@ -1,15 +1,19 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"math"
 	"net/http"
-	"os"
 	"slices"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -18,6 +22,7 @@ import (
 )
 
 const gtfsURL = "https://zet.hr/gtfs-rt-protobuf"
+const tripsDataURL = "https://www.zet.hr/gtfs-scheduled/latest"
 
 type Vehicles []Vehicle
 type Vehicle struct {
@@ -40,6 +45,8 @@ type Trips map[TripID]Trip
 type RoutesToTrips map[RouteID]Trips
 
 var routesToTrips = RoutesToTrips{}
+var cachedTripsFilename = ""
+var mu sync.RWMutex = sync.RWMutex{}
 
 func fetchGTFSRealTime(url string) (*gtfs.FeedMessage, error) {
 	resp, err := http.Get(url)
@@ -65,8 +72,16 @@ func fetchGTFSRealTime(url string) (*gtfs.FeedMessage, error) {
 	return feed, nil
 }
 
-func getTrip(route_id RouteID, trip_id TripID) Trip {
-	return routesToTrips[route_id][trip_id]
+func getTrip(route_id RouteID, trip_id TripID) (Trip, bool) {
+	mu.RLock()
+	defer mu.RUnlock()
+	route, exists := routesToTrips[route_id]
+	if exists {
+		if trip, exists := route[trip_id]; exists {
+			return trip, true
+		}
+	}
+	return Trip{}, false
 }
 
 var allVehicles atomic.Value
@@ -109,14 +124,42 @@ func getRoutes(vehicles []*gtfs.VehiclePosition) map[RouteID]Vehicles {
 	routes := map[RouteID]Vehicles{}
 	for _, v := range vehicles {
 		routeID := RouteID(v.GetTrip().GetRouteId())
+		tripID := TripID(v.GetTrip().GetTripId())
 		if _, exists := routes[routeID]; !exists {
 			routes[routeID] = Vehicles{}
+		}
+		trip, exists := getTrip(routeID, tripID)
+		if !exists {
+			if isTripsDataStale() { // cache needs updating
+				log.Printf("Refetching trips data because routeID %v or tripID %v don't exist", routeID, tripID)
+				tripsData, err := getTripsData()
+				if err != nil {
+					mu.Lock()
+					defer mu.Unlock()
+					clear(routesToTrips)
+					for _, row := range tripsData {
+						routeID := RouteID(row[0])
+						if _, exists := routesToTrips[routeID]; !exists {
+							routesToTrips[routeID] = Trips{}
+						}
+
+						tripID := TripID(row[2])
+						routesToTrips[routeID][tripID] = Trip{Headsign: row[3], Direction: row[5]}
+					}
+				}
+				trip, exists = getTrip(routeID, tripID) // it should exist now
+				if !exists {
+					log.Printf("Route (route ID: %v, trip ID: %v) doesn't exist even after refetching data, this should not happen\n", routeID, tripID)
+				}
+			} else {
+				log.Printf("%v or %v don't exist in the cache, but the cache is up to date (%s)\n", routeID, tripID, cachedTripsFilename)
+			}
 		}
 		routes[routeID] = append(routes[routeID], Vehicle{
 			ID:        v.GetVehicle().GetId(),
 			Latitude:  v.GetPosition().GetLatitude(),
 			Longitude: v.GetPosition().GetLongitude(),
-			Headsign:  getTrip(routeID, TripID(v.GetTrip().GetTripId())).Headsign,
+			Headsign:  trip.Headsign,
 		})
 	}
 	return routes
@@ -167,6 +210,7 @@ func calculateVehicleBearings(oldRoutes, newRoutes map[RouteID]Vehicles) map[Rou
 
 	return newRoutes
 }
+
 func faviconHandler(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "data/favicon-32x32.png")
 }
@@ -225,23 +269,89 @@ func sseHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func loadTripsData() {
-	tripsFile, err := os.Open("./data/trips.txt")
+func readZipFile(zf *zip.File) ([]byte, error) {
+	f, err := zf.Open()
 	if err != nil {
-		log.Fatalf("Could not open trips info: %v\n", err)
+		return nil, err
 	}
-	defer tripsFile.Close()
+	defer f.Close()
+	return io.ReadAll(f)
+}
 
-	tripsReader := csv.NewReader(tripsFile)
+func isTripsDataStale() bool {
+	resp, err := http.Head(tripsDataURL)
+	if err != nil {
+		log.Println("Could not check for trips data: ", err)
+		return false
+	}
+	defer resp.Body.Close() // should be noop if there is no body
+
+	// should be in the form of:
+	//     attachment; filename=zet-gtfs-scheduled-000-00369.zip
+	contentDisposition := resp.Header.Get("Content-Disposition")
+	isAttachment := strings.HasPrefix(contentDisposition, "attachment; filename=zet-gtfs-scheduled")
+	matchesCachedValue := contentDisposition == cachedTripsFilename
+	return isAttachment && !matchesCachedValue
+}
+
+func fetchTripsData() ([]byte, error) {
+	resp, err := http.Get(tripsDataURL)
+	if err != nil {
+		log.Println("Could not fetch trips data: ", err)
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Println("Could not read trips data response: ", err)
+		return nil, err
+	}
+
+	zipReader, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		log.Println("Could not create a zip reader for trips data: ", err)
+		return nil, err
+	}
+
+	for _, zipFile := range zipReader.File {
+		if zipFile.Name == "trips.txt" {
+			unzippedFileBytes, err := readZipFile(zipFile)
+			if err != nil {
+				log.Println("Could not unzip trips.txt: ", err)
+				return nil, err
+			}
+			cachedTripsFilename = resp.Header.Get("Content-Disposition")
+			return unzippedFileBytes, nil
+		}
+	}
+	return nil, errors.New("trips.txt not present in response")
+}
+
+func getTripsData() ([][]string, error) {
+	tripsData, err := fetchTripsData()
+	if err != nil {
+		log.Println("Could not open trips info: ", err)
+	}
+
+	tripsReader := csv.NewReader(bytes.NewReader(tripsData))
 
 	_, err = tripsReader.Read() // read the header
 	if err != nil {
-		log.Fatalf("Could not parse CSV: %v\n", err)
+		log.Printf("Could not parse CSV: %v\n", err)
 	}
 
-	rawCSVdata, _ := tripsReader.ReadAll() // read the rest
+	return tripsReader.ReadAll() // read the rest
+}
 
-	for _, row := range rawCSVdata {
+func main() {
+	tripsData, err := getTripsData()
+	if err != nil {
+		log.Println("Could not get trips data: ", err)
+		return
+	}
+
+	for _, row := range tripsData {
 		routeID := RouteID(row[0])
 		if _, exists := routesToTrips[routeID]; !exists {
 			routesToTrips[routeID] = Trips{}
@@ -250,10 +360,6 @@ func loadTripsData() {
 		tripID := TripID(row[2])
 		routesToTrips[routeID][tripID] = Trip{Headsign: row[3], Direction: row[5]}
 	}
-}
-
-func main() {
-	loadTripsData()
 
 	feed, err := fetchGTFSRealTime(gtfsURL)
 	if err != nil {
