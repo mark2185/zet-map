@@ -54,6 +54,10 @@
 <body>
 
     <div id="controls-container">
+        <div id="last-updated" style="margin-top: 10px; font-size: 14px; color: #333;">
+            Last update: <span id="last-updated-timer">--</span> seconds ago
+        </div>
+        <br>
         <button id="filter-button">Show/Hide Filters</button>
         <div id="controls">
             <h4>Filter by Route</h4>
@@ -426,6 +430,7 @@
                 allRoutes = new Map(Object.entries(JSON.parse(event.data)));
                 updateRouteFilters(); // preserve search/filter state here
                 renderMarkers();
+                lastUpdateTime = Date.now();
             } catch (e) {
                 console.error("SSE error parsing data:", e);
             }
@@ -434,6 +439,15 @@
         source.onerror = function (e) {
             console.error("SSE connection error:", e);
         };
+
+        let lastUpdateTime = Date.now();
+
+        function updateTimerDisplay() {
+            const secondsAgo = Math.floor((Date.now() - lastUpdateTime) / 1000);
+            document.getElementById('last-updated-timer').textContent = secondsAgo;
+        }
+
+        setInterval(updateTimerDisplay, 1000);
     </script>
 </body>
 </html>
