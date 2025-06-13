@@ -7,8 +7,8 @@ import (
 )
 
 type Point struct {
-	Lat float64 `json:"lat"`
-	Lon float64 `json:"lon"`
+	Lat float64 // float64 because of functions in the math package
+	Lon float64 // float64 because of functions in the math package
 }
 
 func CalculateBearing(p1, p2 Point) float64 {
@@ -37,4 +37,3 @@ func ReadZipFile(zf *zip.File) ([]byte, error) {
 	defer f.Close()
 	return io.ReadAll(f)
 }
-

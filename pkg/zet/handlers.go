@@ -1,13 +1,11 @@
 package zet
 
 import (
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
-	"os"
-	"strconv"
 	"sync/atomic"
 	"time"
 )
@@ -17,51 +15,44 @@ func FaviconHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func StopsHandler(w http.ResponseWriter, r *http.Request) {
-	type Stop struct {
-		Latitude  float32 `json:"lat"`
-		Longitude float32 `json:"lon"`
-		Headsign  string  `json:"headsign"`
-	}
-
-	stopsFile, err := os.Open("./data/stops.txt")
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		log.Println("Cannot read stops file!")
+		log.Println("Couldn't read body for stops request")
+		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
-	defer stopsFile.Close()
+	defer r.Body.Close()
 
-	stopsReader := csv.NewReader(stopsFile)
-
-	allStops, _ := stopsReader.ReadAll()
-
-	stops := []Stop{}
-
-	for _, stop := range allStops {
-		log.Println(stop)
-		location_type := stop[8]
-		platform := "0"
-		if location_type != platform {
-			continue
-		}
-		lat, _ := strconv.ParseFloat(stop[4], 32)
-		lon, _ := strconv.ParseFloat(stop[5], 32)
-		stops = append(stops, Stop{
-			Latitude:  float32(lat),
-			Longitude: float32(lon),
-			Headsign:  stop[1],
-		})
+	type Req struct {
+		Routes []string `json:"routes"`
 	}
 
-	// stops = []Stop{
-	// Stop{Latitude: 45.794911, Longitude: 15.959232, Headsign: "Vjesnik 1"},
-	// Stop{Latitude: 45.793392, Longitude: 15.958070, Headsign: "Vjesnik 2"},
-	// Stop{Latitude: 45.794151, Longitude: 15.958651, Headsign: "Vjesnik"},
+	var req Req
+	if err := json.Unmarshal(body, &req); err != nil {
+		log.Println("Couldn't parse JSON body: ", err)
+		http.Error(w, "Bad JSON", http.StatusBadRequest)
+		return
+	}
+
+	log.Println("Routes: ", req.Routes)
+	stops := []Stop{}
+	for _, r := range req.Routes {
+		stopsForRoute, exists := getStops(RouteID(r))
+		if !exists {
+			continue
+		}
+		stops = append(stops, stopsForRoute...)
+	}
+	// ss := []Stop{
+	// {ID: "a", Latitude: 45.794911, Longitude: 15.959232, Headsign: "Vjesnik 1"},
+	// {ID: "a", Latitude: 45.793392, Longitude: 15.958070, Headsign: "Vjesnik 2"},
+	// {ID: "a", Latitude: 45.794151, Longitude: 15.958651, Headsign: "Vjesnik"},
 	// }
 
 	response := struct {
-		Stops []Stop `json:"stops"`
+		S Stops `json:"stops"`
 	}{
-		Stops: stops,
+		S: stops,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -95,7 +86,7 @@ func SseHandler(w http.ResponseWriter, r *http.Request) {
 		if current > clientLastUpdate {
 			clientLastUpdate = current
 
-			vehicles := allVehicles.Load().(map[RouteID]Vehicles)
+			vehicles := allVehiclesPerRoutes.Load().(map[RouteID]Vehicles)
 			data, _ := json.Marshal(vehicles)
 			fmt.Fprintf(w, "data: %s\n\n", data)
 			flusher.Flush()
@@ -110,4 +101,3 @@ func SseHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
-

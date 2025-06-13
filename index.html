@@ -257,6 +257,7 @@
             document.querySelectorAll("#tramFilters input, #busFilters input").forEach(input => {
                 input.addEventListener("change", function() {
                     updateURL();
+                    fetchStops();
                     renderMarkers();
                 });
             });
@@ -421,6 +422,44 @@
                     selectedRoutes.push('routes=' + input.value);
                 });
             history.replaceState(null, '', '?' + selectedRoutes.join('&'));
+        }
+
+        function fetchStops() {
+            let selectedRoutes = [];
+            document
+                .querySelectorAll('#tramFilters input:checked, #busFilters input:checked')
+                .forEach((input) => {
+                    selectedRoutes.push(input.value);
+                });
+            console.log("Selected route: ", selectedRoutes);
+            fetch('/stops', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ routes: selectedRoutes })
+            })
+            .then(response => response.json())
+            .then(r => {
+                stops = r.stops;
+                console.log("Stops: ", stops);
+                stops.forEach( stop => {
+                    marker = L.marker([stop.lat, stop.lon], {
+                        icon: L.divIcon({
+                            className: "custom-stop-icon",
+                            html: `
+                                <div style="position: relative; width: 10px; height: 10px;">
+                                    <svg width="10" height="10" xmlns="http://www.w3.org/2000/svg">
+                                        <rect x="0" y="0" width="10" height="10" fill="gray" stroke="black" stroke-width="2" />
+                                    </svg>
+                                </div>
+                            `,
+                            iconSize: [10, 10],
+                            iconAnchor: [5, 5]
+                        })
+                    }).addTo(map).bindPopup(`${stop.headsign}`);
+                })
+            });
         }
 
         const source = new EventSource('/events');
