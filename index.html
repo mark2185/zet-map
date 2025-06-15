@@ -93,7 +93,9 @@
         }).addTo(map);
 
         var markers = [];
+        var stopMarkers = [];
         var allRoutes = new Map();
+        var allStops = new Map();
         var routeColors = new Set(); // Stores colors for each route
         const tramLines = new Set([
             '1', '2', '3', '4', '5', '6', '7', '8',
@@ -255,10 +257,53 @@
 
             // Reattach event listeners
             document.querySelectorAll("#tramFilters input, #busFilters input").forEach(input => {
-                input.addEventListener("change", function() {
+                input.addEventListener("change", async function() {
                     updateURL();
-                    fetchStops();
+                    await fetchStops();
+                    renderStops();
                     renderMarkers();
+                });
+            });
+        }
+
+        function renderStops() {
+            console.log("Rendering stops");
+            let selectedRoutes = new Set();
+            document.querySelectorAll("#tramFilters input:checked, #busFilters input:checked").forEach(input => {
+                selectedRoutes.add(input.value);
+            });
+
+            for (let [routeID, _] of allStops.entries()) {
+                if (!selectedRoutes.has(routeID)) {
+                    // remove all markers on the missing route
+                    stopMarkers.filter( marker => marker.routeId === routeID ).forEach( marker => map.removeLayer(marker) );
+                    stopMarkers = stopMarkers.filter( marker => marker.routeId !== routeID );
+                }
+            }
+
+            // redraw the stops in case some of removed ones overlap with the ones still remaining
+            selectedRoutes.forEach( routeID => {
+                allStops.get(routeID).forEach(stop => {
+                    let marker = markers.find(marker => marker.id === stop.id);
+                    if (marker == null) {
+                        marker = L.marker([stop.lat, stop.lon], {
+                            icon: L.divIcon({
+                                className: "custom-stop-icon",
+                                html: `
+                                    <div style="position: relative; width: 10px; height: 10px;">
+                                        <svg width="10" height="10" xmlns="http://www.w3.org/2000/svg">
+                                            <rect x="0" y="0" width="10" height="10" fill="${getRouteColor(routeID)}" stroke="black" stroke-width="2" />
+                                        </svg>
+                                    </div>
+                                `,
+                                iconSize: [10, 10],
+                                iconAnchor: [5, 5]
+                            })
+                        }).addTo(map).bindPopup(`${stop.headsign}`);
+                        marker.id = stop.id;
+                        marker.routeId = routeID;
+                        stopMarkers.push(marker);
+                    }
                 });
             });
         }
@@ -272,7 +317,8 @@
 
             for (let [routeID, vehicles] of allRoutes.entries()) {
                 if (!selectedRoutes.has(routeID)) {
-                    markers.filter( marker => marker.routeId === routeID).forEach( marker => map.removeLayer(marker));
+                    // remove all markers on the missing route
+                    markers.filter( marker => marker.routeId === routeID ).forEach( marker => map.removeLayer(marker) );
                     markers = markers.filter(marker => marker.routeId !== routeID);
                     continue;
                 }
@@ -304,35 +350,35 @@
                     }
                 })
             }
-    }
+        }
 
-    function delay(time) {
-        return new Promise(resolve => setTimeout(resolve, time));
-    }
+        function delay(time) {
+            return new Promise(resolve => setTimeout(resolve, time));
+        }
 
-    function animateMarkerPosition(marker, signal) {
-        return new Promise(async (resolve, reject) => {
-            const currentPosition = marker.oldPosition;
-            const endPosition = marker.newPosition;
-            const moveFrequency = 50;
-            const animationDuration = 2000;
-            const steps = animationDuration / moveFrequency;
+        function animateMarkerPosition(marker, signal) {
+            return new Promise(async (resolve, reject) => {
+                const currentPosition = marker.oldPosition;
+                const endPosition = marker.newPosition;
+                const moveFrequency = 50;
+                const animationDuration = 2000;
+                const steps = animationDuration / moveFrequency;
 
-            const latitudeStep  = (endPosition.lat - currentPosition.lat) / steps;
-            const longitudeStep = (endPosition.lng - currentPosition.lng) / steps;
-            for (let step = 1; step <= steps; step++) {
-                if (signal.aborted) break;
-                await delay(moveFrequency);
-                currentPosition.lat += latitudeStep;
-                currentPosition.lng += longitudeStep;
-                marker.setLatLng(currentPosition);
-                let style = marker._icon.getElementsByTagName("span")[0].style;
-                style.transform = style.transform.replace(/rotate\([^)]*\)/, `rotate(${-marker.direction}deg)`);
-            }
+                const latitudeStep  = (endPosition.lat - currentPosition.lat) / steps;
+                const longitudeStep = (endPosition.lng - currentPosition.lng) / steps;
+                for (let step = 1; step <= steps; step++) {
+                    if (signal.aborted) break;
+                    await delay(moveFrequency);
+                    currentPosition.lat += latitudeStep;
+                    currentPosition.lng += longitudeStep;
+                    marker.setLatLng(currentPosition);
+                    let style = marker._icon.getElementsByTagName("span")[0].style;
+                    style.transform = style.transform.replace(/rotate\([^)]*\)/, `rotate(${-marker.direction}deg)`);
+                }
 
-            resolve();
-        })
-    }
+                resolve();
+            })
+        }
 
         // Function to add the user's location
         function addUserLocation() {
@@ -390,7 +436,7 @@
         }
 
         // Function to toggle the visibility of the controls div
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', async function() {
             const filterButton = document.getElementById('filter-button');
             const controlsDiv = document.getElementById('controls');
 
@@ -400,6 +446,10 @@
 
             // Initialize filters from URL
             updateRouteFilters();
+
+            // Display stops for initially selected routes
+            await fetchStops();
+            renderStops();
 
             addUserLocation();
         });
@@ -424,15 +474,23 @@
             history.replaceState(null, '', '?' + selectedRoutes.join('&'));
         }
 
-        function fetchStops() {
+        async function fetchStops() {
             let selectedRoutes = [];
             document
                 .querySelectorAll('#tramFilters input:checked, #busFilters input:checked')
                 .forEach((input) => {
                     selectedRoutes.push(input.value);
                 });
-            console.log("Selected route: ", selectedRoutes);
-            fetch('/stops', {
+
+            console.log("Selected routes: ", selectedRoutes);
+            // fetch only new stops
+            selectedRoutes = selectedRoutes.filter( routeID => !(routeID in allStops) );
+            if ( selectedRoutes.length === 0 ) {
+                return;
+            }
+
+            console.log("Fetching routes: ", selectedRoutes);
+            await fetch('/stops', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -441,30 +499,15 @@
             })
             .then(response => response.json())
             .then(r => {
-                stops = r.stops;
-                console.log("Stops: ", stops);
-                stops.forEach( stop => {
-                    marker = L.marker([stop.lat, stop.lon], {
-                        icon: L.divIcon({
-                            className: "custom-stop-icon",
-                            html: `
-                                <div style="position: relative; width: 10px; height: 10px;">
-                                    <svg width="10" height="10" xmlns="http://www.w3.org/2000/svg">
-                                        <rect x="0" y="0" width="10" height="10" fill="gray" stroke="black" stroke-width="2" />
-                                    </svg>
-                                </div>
-                            `,
-                            iconSize: [10, 10],
-                            iconAnchor: [5, 5]
-                        })
-                    }).addTo(map).bindPopup(`${stop.headsign}`);
-                })
+                for (let [routeID, stops] of Object.entries(r.stops)) {
+                    allStops.set(routeID, stops);
+                }
             });
         }
 
         const source = new EventSource('/events');
 
-        source.onmessage = function (event) {
+        source.onmessage = async function (event) {
             try {
                 allRoutes = new Map(Object.entries(JSON.parse(event.data)));
                 updateRouteFilters(); // preserve search/filter state here

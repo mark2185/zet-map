@@ -8,11 +8,12 @@ import (
 )
 
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 	if err := zet.FetchInitialData(); err != nil {
-		log.Fatalf("Failed to load initial data: %v", err)
+		log.Fatalf("Failed to load initial data: %v\n", err)
 	}
 
-	go zet.FetchDataLoop()
+	go zet.FetchRealtimeDataLoop()
 
 	http.HandleFunc("/", zet.MapHandler)
 	http.HandleFunc("/favicon.ico", zet.FaviconHandler)

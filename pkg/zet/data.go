@@ -46,6 +46,13 @@ type Stop struct {
 }
 type Stops []Stop
 
+type StopSOA struct {
+	ID        []string
+	Latitude  []float32
+	Longitude []float32
+	Headsign  []string
+}
+
 type RouteID string
 type TripID string
 
@@ -57,65 +64,117 @@ var cachedScheduledDataFilename = ""
 var cacheMutex sync.RWMutex = sync.RWMutex{}
 
 var routesToStops = map[RouteID]Stops{}
-var allStops = Stops{}
+
+// var allStops = Stops{}
+var allStops = StopSOA{}
 
 // Populate the routesToStops global variable.
 // trips      has route_id -> trip_id (already loaded)
 // stop_times has trip_id  -> stop_id
 // stops      has stop_id  -> lat, lon, type (already loaded)
-func loadStopTimes(data [][]string) {
+func loadStopTimes(reader *csv.Reader) {
 	cacheMutex.Lock()
 	defer cacheMutex.Unlock()
 
 	clear(routesToStops)
 
-	tripToStops := map[TripID]Stops{}
-	for _, line := range data {
+	// read the header since we don't need it
+	if _, err := reader.Read(); err != nil {
+		log.Println("Could not read CSV header from stop times")
+		return
+	}
+
+	tripToStopID := map[TripID][]string{}
+	// connect all trips to stop IDs
+	for {
+		line, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			log.Println("Error reading stop times CSV: ", err)
+			return
+		}
 		trip_id := TripID(line[0])
+		if _, exists := tripToStopID[trip_id]; !exists {
+			tripToStopID[trip_id] = []string{}
+		}
 		stop_id := line[3]
-
-		stop_idx := slices.IndexFunc(allStops, func(s Stop) bool { return s.ID == stop_id })
-		if stop_idx == -1 {
-			continue
-		}
-
-		if _, exists := tripToStops[trip_id]; !exists {
-			tripToStops[trip_id] = Stops{}
-		}
-		tripToStops[trip_id] = append(tripToStops[trip_id], allStops[stop_idx])
+		tripToStopID[trip_id] = append(tripToStopID[trip_id], stop_id)
 	}
 
 	for route_id, trip_ids := range routesToTrips {
-		// go over all trips for a route to find all the stops for that route
+		filteredStopIDs := []string{}
+
+		// go over all trips for a route and gather all unique stop IDs for the route
 		for trip_id := range trip_ids {
-			if stops, exists := tripToStops[trip_id]; exists {
-				routesToStops[route_id] = stops
+			stopIDs, exists := tripToStopID[trip_id]
+			if !exists { // this shouldn't happen, but better safe than sorry
+				continue
+			}
+
+		FilterStopIDs:
+			for _, stop_id := range stopIDs {
+				// check if the filteredStopIDs already contains said stop_id append it only if it doesn't
+				// TODO: lo.Filter
+				for _, id := range filteredStopIDs {
+					if stop_id == id {
+						continue FilterStopIDs
+					}
+				}
+				filteredStopIDs = append(filteredStopIDs, stop_id)
 			}
 		}
+
+		stops := []Stop{}
+		for _, stop_id := range filteredStopIDs {
+			stop_idx := slices.IndexFunc(allStops.ID, func(id string) bool { return id == stop_id })
+			if stop_idx == -1 {
+				continue
+			}
+			stops = append(stops, Stop{
+				ID:        allStops.ID[stop_idx],
+				Latitude:  allStops.Latitude[stop_idx],
+				Longitude: allStops.Longitude[stop_idx],
+				Headsign:  allStops.Headsign[stop_idx],
+			})
+		}
+		routesToStops[route_id] = stops
 	}
+	log.Println("Route 5 has this many stops: ", len(routesToStops["5"]))
 }
 
 func loadStops(data [][]string) {
 	cacheMutex.Lock()
 	defer cacheMutex.Unlock()
 
-	clear(allStops)
+	clear(allStops.ID)
+	clear(allStops.Latitude)
+	clear(allStops.Longitude)
+	clear(allStops.Headsign)
+	// clear(allStops)
 	for _, line := range data {
 		location_type := line[8]
 		const platform = "0"
 		// platforms are "logical groups" of stations, it's not the actual place
 		// one gets on/off the tram/bus
-		if location_type != platform {
-			continue
+		if location_type == platform {
+			// log.Printf("Location type: platform: %v\n", line)
+			// continue
 		}
 		lat, _ := strconv.ParseFloat(line[4], 32)
 		lon, _ := strconv.ParseFloat(line[5], 32)
-		allStops = append(allStops, Stop{
-			ID:        line[0],
-			Latitude:  float32(lat),
-			Longitude: float32(lon),
-			Headsign:  line[1],
-		})
+
+		// allStops = append(allStops, Stop{
+		// ID:        line[0],
+		// Latitude:  float32(lat),
+		// Longitude: float32(lon),
+		// Headsign:  line[2],
+		// })
+		allStops.ID = append(allStops.ID, line[0])
+		allStops.Latitude = append(allStops.Latitude, float32(lat))
+		allStops.Longitude = append(allStops.Longitude, float32(lon))
+		allStops.Headsign = append(allStops.Headsign, line[2])
 	}
 }
 
@@ -361,6 +420,16 @@ func FetchRealtimeDataLoop() {
 	}
 }
 
+func getCsvReaderFromZip(file *zip.File) (*csv.Reader, error) {
+	decompressedData, err := utils.ReadZipFile(file)
+	if err != nil {
+		log.Println("Couldn't unzip ", file)
+		return nil, err
+	}
+
+	return csv.NewReader(bytes.NewReader(decompressedData)), nil
+}
+
 func readCsvFromZip(file *zip.File) ([][]string, error) {
 	decompressedData, err := utils.ReadZipFile(file)
 	if err != nil {
@@ -404,7 +473,6 @@ func updateScheduledDataCache() error {
 	// we're only interested in the ones marked with *
 
 	for _, zipFile := range reader.File {
-		// TODO: make sure stops are be loaded before stop times
 		switch zipFile.Name {
 		case "stops.txt":
 			data, err := readCsvFromZip(zipFile)
@@ -422,18 +490,18 @@ func updateScheduledDataCache() error {
 			log.Println("Started parsing trips")
 			loadTrips(data)
 			log.Println("Parsed trips")
-		default:
-			// ignore other files
 		}
 	}
+
+	// loadStopTimes requires both stops.txt and trips.txt to be loaded already
 	for _, zipFile := range reader.File {
 		if zipFile.Name == "stop_times.txt" {
-			data, err := readCsvFromZip(zipFile)
+			reader, err := getCsvReaderFromZip(zipFile)
 			if err != nil {
 				return err
 			}
 			log.Println("Started parsing stop times")
-			loadStopTimes(data)
+			loadStopTimes(reader)
 			log.Println("Parsed stop times")
 		}
 	}

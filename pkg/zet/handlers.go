@@ -35,13 +35,14 @@ func StopsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Println("Routes: ", req.Routes)
-	stops := []Stop{}
+	stops := map[RouteID]Stops{}
 	for _, r := range req.Routes {
-		stopsForRoute, exists := getStops(RouteID(r))
+		route_id := RouteID(r)
+		stopsForRoute, exists := getStops(route_id)
 		if !exists {
 			continue
 		}
-		stops = append(stops, stopsForRoute...)
+		stops[route_id] = stopsForRoute
 	}
 	// ss := []Stop{
 	// {ID: "a", Latitude: 45.794911, Longitude: 15.959232, Headsign: "Vjesnik 1"},
@@ -50,7 +51,7 @@ func StopsHandler(w http.ResponseWriter, r *http.Request) {
 	// }
 
 	response := struct {
-		S Stops `json:"stops"`
+		S map[RouteID]Stops `json:"stops"`
 	}{
 		S: stops,
 	}
