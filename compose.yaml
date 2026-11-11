@@ -6,4 +6,12 @@ services:
       - "8081:8080"
     volumes:
       - ./:/app
-    restart: always
+    restart: unless-stopped
+    container_name: zet-container
+    network_mode: host
+
+  restarter:
+    image: docker:cli
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
+    command: ["/bin/sh", "-c", "while true; do sleep 86400; docker restart zet-container; done"]
+    restart: unless-stopped
