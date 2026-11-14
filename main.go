@@ -12,6 +12,7 @@ import (
 	"math"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -47,6 +48,7 @@ type RoutesToTrips map[RouteID]Trips
 var routesToTrips = RoutesToTrips{}
 var cachedTripsFilename = ""
 var mu sync.RWMutex = sync.RWMutex{}
+var retryAfterTime time.Duration = 5
 
 func fetchGTFSRealTime(url string) (*gtfs.FeedMessage, error) {
 	resp, err := http.Get(url)
@@ -56,6 +58,9 @@ func fetchGTFSRealTime(url string) (*gtfs.FeedMessage, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		if seconds, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil {
+			retryAfterTime = time.Duration(seconds + 1)
+		}
 		return nil, fmt.Errorf("Unexpected response code: %d", resp.StatusCode)
 	}
 
@@ -377,7 +382,7 @@ func main() {
 
 	go func() {
 		for {
-			time.Sleep(2 * time.Second)
+			time.Sleep(retryAfterTime * time.Second)
 
 			feed, err := fetchGTFSRealTime(gtfsURL)
 			if err != nil {
